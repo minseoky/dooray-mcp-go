@@ -1,0 +1,7 @@
+/dist/
+/dooray-mcp
+/dooray-mcp.exe
+*.test
+# Cross-compiled binaries staged into the npm wrapper by `make npm-stage`.
+npm/binaries/dooray-mcp_*
+npm/*.tgz

@@ -1,0 +1,38 @@
+{
+  "name": "dooray-mcp-go",
+  "version": "0.1.0",
+  "description": "Dooray MCP server implemented in Go, distributed as prebuilt binaries",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minseoky/dooray-mcp-go.git"
+  },
+  "bin": {
+    "dooray-mcp-go": "./bin/dooray-mcp-go.js"
+  },
+  "files": [
+    "bin",
+    "binaries",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "os": [
+    "darwin",
+    "win32",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "keywords": [
+    "mcp",
+    "dooray",
+    "model-context-protocol",
+    "go"
+  ],
+  "license": "MIT"
+}
