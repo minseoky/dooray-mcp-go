@@ -32,35 +32,86 @@ type Result struct {
 	ConfigPath string
 	BackupPath string
 	Replaced   bool
+	// Created is true when no configuration existed at any known location, so
+	// the file was written fresh. A client that keeps its configuration
+	// somewhere else would show up this way.
+	Created bool
 }
 
 // ErrAlreadyExists is returned when the target server name is taken and the
 // caller did not ask to replace it.
 var ErrAlreadyExists = errors.New("server name already exists")
 
-// ClaudeDesktopConfigPath returns the platform-specific configuration path.
-func ClaudeDesktopConfigPath() (string, error) {
+// configFileName is the file every Claude Desktop install uses, wherever the
+// containing directory turns out to be.
+const configFileName = "claude_desktop_config.json"
+
+// ClaudeDesktopConfigCandidates lists the locations Claude Desktop is known to
+// keep its configuration, most specific first.
+//
+// The directory is not the same on every Windows machine. A packaged (MSIX or
+// Store) install has its AppData writes redirected into a per-package
+// LocalCache, so the file can sit under LOCALAPPDATA\Packages\<package>\
+// instead of APPDATA. Rather than commit to one of those, the caller searches
+// for a file that already exists.
+func ClaudeDesktopConfigCandidates() ([]string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	switch runtime.GOOS {
 	case "darwin":
-		return filepath.Join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json"), nil
+		return []string{
+			filepath.Join(home, "Library", "Application Support", "Claude", configFileName),
+		}, nil
+
 	case "windows":
 		appData := os.Getenv("APPDATA")
 		if appData == "" {
 			appData = filepath.Join(home, "AppData", "Roaming")
 		}
-		return filepath.Join(appData, "Claude", "claude_desktop_config.json"), nil
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData == "" {
+			localAppData = filepath.Join(home, "AppData", "Local")
+		}
+
+		candidates := []string{filepath.Join(appData, "Claude", configFileName)}
+
+		// A packaged install redirects Roaming into its own LocalCache. The
+		// package family name varies, so every package directory is examined.
+		packaged, _ := filepath.Glob(filepath.Join(localAppData, "Packages", "*", "LocalCache", "Roaming", "Claude", configFileName))
+		candidates = append(candidates, packaged...)
+
+		return append(candidates, filepath.Join(localAppData, "Claude", configFileName)), nil
+
 	default:
 		configHome := os.Getenv("XDG_CONFIG_HOME")
 		if configHome == "" {
 			configHome = filepath.Join(home, ".config")
 		}
-		return filepath.Join(configHome, "Claude", "claude_desktop_config.json"), nil
+		return []string{filepath.Join(configHome, "Claude", configFileName)}, nil
 	}
+}
+
+// ClaudeDesktopConfigPath returns the configuration file to merge into: the
+// first candidate that already exists, or the default location to create when
+// Claude Desktop has not written one yet.
+func ClaudeDesktopConfigPath() (string, error) {
+	candidates, err := ClaudeDesktopConfigCandidates()
+	if err != nil {
+		return "", err
+	}
+	if len(candidates) == 0 {
+		return "", errors.New("no Claude Desktop configuration location is known for this platform")
+	}
+
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return candidates[0], nil
 }
 
 // ClaudeDesktop merges the entry into the Claude Desktop configuration,
@@ -107,7 +158,7 @@ func ClaudeDesktop(request Request) (*Result, error) {
 		return nil, err
 	}
 
-	result := &Result{ConfigPath: configPath, Replaced: replaced}
+	result := &Result{ConfigPath: configPath, Replaced: replaced, Created: mode == 0}
 	if mode != 0 {
 		backupPath, err := backup(configPath)
 		if err != nil {

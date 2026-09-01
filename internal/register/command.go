@@ -97,6 +97,22 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 	if result.BackupPath != "" {
 		fmt.Fprintf(stdout, "previous configuration backed up to %s\n", result.BackupPath)
 	}
+
+	// Creating the file means no existing configuration was found. That is
+	// normal before Claude Desktop has ever been configured, but it is also
+	// what happens when this install keeps its configuration somewhere the
+	// search does not cover, so the searched locations are worth showing.
+	if result.Created && parsed.configPath == "" {
+		fmt.Fprintln(stdout, "no existing Claude Desktop configuration was found, so this one was created.")
+		if candidates, err := ClaudeDesktopConfigCandidates(); err == nil && len(candidates) > 1 {
+			fmt.Fprintln(stdout, "locations searched:")
+			for _, candidate := range candidates {
+				fmt.Fprintf(stdout, "  %s\n", candidate)
+			}
+			fmt.Fprintln(stdout, "if Claude Desktop reads a different file, re-run with --config <path>.")
+		}
+	}
+
 	fmt.Fprintln(stdout, "restart Claude Desktop to load the server.")
 	return 0
 }

@@ -157,7 +157,8 @@ dooray-mcp register --name dooray-read-only --mode read-only --token "{personal-
 What the command does:
 
 - Copies the binary to a stable per-user directory — `%LOCALAPPDATA%\Programs\dooray-mcp` on Windows, `~/.local/bin` elsewhere — and records that absolute path, so the client never launches it from a package cache. An identical file already in place is left alone.
-- Resolves the Claude Desktop config path for the current platform, and prints the file it wrote so you can confirm the location.
+- Searches the known Claude Desktop configuration locations and merges into the file that already exists, rather than assuming one path. On Windows that includes the packaged-install location under `LOCALAPPDATA\Packages\`, where a Store or MSIX install has its `Roaming` writes redirected.
+- Prints the file it wrote, so the location can be confirmed. If no configuration existed anywhere it searched, it says so and lists the locations, because that is also what happens when an install keeps its configuration somewhere else. Use `--config <path>` to point at that file directly.
 - Copies the current file to `claude_desktop_config.json.bak` before writing.
 - Merges only the `mcpServers.<name>` entry, leaving every other server and top-level setting untouched.
 - Records this binary's absolute path as `command`, or `npx -y dooray-mcp-go@<version>` when it was started through the npm wrapper.
@@ -189,6 +190,8 @@ dooray-mcp register --print --token "{personal-token}"
 ```
 
 `dooray-mcp register --help` lists every option, including `--config <path>` to merge into a different file, `--install-dir <dir>` to choose where the binary is installed, and `--command <path>` to record a specific command.
+
+If Claude Desktop does not pick the server up, check that the file `register` reported is the one Claude Desktop actually reads. Its Settings dialog exposes the configuration through "Edit Config", which reveals the path in use on that machine.
 
 ### Why the config points at an installed path
 

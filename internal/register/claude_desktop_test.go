@@ -163,18 +163,70 @@ func TestClaudeDesktopHandlesEmptyFile(t *testing.T) {
 	}
 }
 
-func TestClaudeDesktopConfigPathIsPlatformSpecific(t *testing.T) {
+func TestClaudeDesktopConfigCandidatesAreUsable(t *testing.T) {
+	candidates, err := ClaudeDesktopConfigCandidates()
+	if err != nil {
+		t.Fatalf("ClaudeDesktopConfigCandidates: %v", err)
+	}
+	if len(candidates) == 0 {
+		t.Fatal("no candidates returned")
+	}
+
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		if !filepath.IsAbs(candidate) {
+			t.Errorf("candidate %q must be absolute", candidate)
+		}
+		if filepath.Base(candidate) != configFileName {
+			t.Errorf("candidate %q must end in %s", candidate, configFileName)
+		}
+		if seen[candidate] {
+			t.Errorf("candidate %q is listed twice", candidate)
+		}
+		seen[candidate] = true
+	}
+}
+
+func TestClaudeDesktopConfigPathPrefersAnExistingFile(t *testing.T) {
+	// The resolved path has to be one of the candidates, so a machine that
+	// keeps its configuration elsewhere is never silently written to.
 	configPath, err := ClaudeDesktopConfigPath()
 	if err != nil {
 		t.Fatalf("ClaudeDesktopConfigPath: %v", err)
 	}
-	if filepath.Base(configPath) != "claude_desktop_config.json" {
-		t.Errorf("path = %q", configPath)
+
+	candidates, err := ClaudeDesktopConfigCandidates()
+	if err != nil {
+		t.Fatalf("ClaudeDesktopConfigCandidates: %v", err)
 	}
-	if !filepath.IsAbs(configPath) {
-		t.Errorf("path = %q must be absolute", configPath)
+
+	found := false
+	for _, candidate := range candidates {
+		if candidate == configPath {
+			found = true
+		}
 	}
-	if filepath.Base(filepath.Dir(configPath)) != "Claude" {
-		t.Errorf("path = %q must live in a Claude directory", configPath)
+	if !found {
+		t.Errorf("resolved %q is not among the candidates %v", configPath, candidates)
+	}
+}
+
+func TestClaudeDesktopReportsCreationVersusMerge(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), configFileName)
+
+	result, err := ClaudeDesktop(Request{Name: "dooray", Entry: entry("tok"), ConfigPath: configPath})
+	if err != nil {
+		t.Fatalf("first register: %v", err)
+	}
+	if !result.Created {
+		t.Error("Created = false for a config that did not exist")
+	}
+
+	result, err = ClaudeDesktop(Request{Name: "other", Entry: entry("tok"), ConfigPath: configPath})
+	if err != nil {
+		t.Fatalf("second register: %v", err)
+	}
+	if result.Created {
+		t.Error("Created = true for a config that already existed")
 	}
 }
