@@ -15,7 +15,6 @@ const (
 	// `npx -y dooray-mcp-go register` points back at npx instead of at the
 	// binary inside the npm cache, which npx may evict.
 	npmLauncherEnv = "DOORAY_MCP_NPM_SPEC"
-	projectURL     = "https://github.com/minseoky/dooray-mcp-go"
 )
 
 type options struct {
@@ -118,7 +117,19 @@ func buildEntry(parsed options, token string) (ServerEntry, error) {
 	var command string
 	var args []string
 
-	if parsed.command == "" {
+	if spec := os.Getenv(npmLauncherEnv); spec != "" {
+		// Started through the npm wrapper, whose cache path is not stable, so
+		// the launch command is the npx invocation that reproduces it.
+		//
+		// This makes the client unpack and spawn the executable in one step.
+		// Endpoint protection can read that as a dropper launching its payload;
+		// it is accepted here deliberately. What is not acceptable is the
+		// alternative of copying the binary somewhere stable, because an
+		// executable writing a copy of its own image is self-replication, which
+		// scores far worse and is never done by this binary.
+		command = "npx"
+		args = append(args, "-y", spec)
+	} else {
 		executable, err := os.Executable()
 		if err != nil {
 			return ServerEntry{}, fmt.Errorf("could not resolve this binary's path: %w", err)
@@ -126,27 +137,11 @@ func buildEntry(parsed options, token string) (ServerEntry, error) {
 		if resolved, err := filepath.EvalSymlinks(executable); err == nil {
 			executable = resolved
 		}
-
-		// A binary running out of a package cache has no stable path, and the
-		// cache is rewritten by the tool that populated it. Copying itself
-		// somewhere stable is not an option: an executable that writes another
-		// executable — its own bytes, no less — is what a self-replicating
-		// dropper does, and endpoint protection reports it as exactly that.
-		// Installing is left to the bundle installer or the install script,
-		// which are the processes that should be writing executables.
-		if os.Getenv(npmLauncherEnv) != "" {
-			return ServerEntry{}, fmt.Errorf(
-				"this is running from a package cache, so there is no stable path to record.\n"+
-					"Install it first, then register:\n"+
-					"  - open the dooray-mcp-go.mcpb bundle from %s/releases/latest, which installs and configures in one step, or\n"+
-					"  - run the install script from the README, then run `dooray-mcp register` from the installed copy.\n"+
-					"To record a specific command anyway, pass --command <path>.",
-				projectURL)
-		}
-
 		command = executable
 	}
 
+	// --command replaces only the executable, so an absolute path to npx keeps
+	// the package arguments the wrapper needs.
 	if parsed.command != "" {
 		command = parsed.command
 	}
@@ -245,9 +240,9 @@ Merges this server into the Claude Desktop configuration, keeping every other
 server and setting in the file. The previous file is backed up as
 claude_desktop_config.json.bak.
 
-The recorded command is this binary's own absolute path, so install it to a
-stable location first. Running this straight from an npx cache is refused,
-because there would be no lasting path to record.
+The recorded command is the npx invocation when this runs through the npm
+wrapper, and otherwise this binary's own absolute path. No executable is ever
+written by this command.
 
 Options:
   --token <token>     Dooray personal API token. Defaults to DOORAY_TOKEN.

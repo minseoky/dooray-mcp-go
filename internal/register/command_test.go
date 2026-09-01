@@ -68,30 +68,39 @@ func TestRunPrintDoesNotWriteConfig(t *testing.T) {
 	}
 }
 
-func TestRunRefusesToRegisterFromAPackageCache(t *testing.T) {
-	// Recording an npx cache path would be worthless, and copying the binary
-	// somewhere stable would make it a self-replicating executable. Neither is
-	// acceptable, so the command explains what to do instead.
-	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.1")
+func TestRunRecordsTheNpxInvocationFromAPackageCache(t *testing.T) {
+	// The cache path is not stable, so the launch command reproduces it through
+	// npx. That the client then unpacks and spawns in one step is accepted.
+	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.2")
 
-	code, _, stderr := runCommand(t, "--print", "--token", "tok")
-	if code == 0 {
-		t.Fatal("registering from a package cache must fail")
+	code, stdout, stderr := runCommand(t, "--print", "--token", "tok")
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
-	if !strings.Contains(stderr, "package cache") || !strings.Contains(stderr, ".mcpb") {
-		t.Errorf("stderr = %s", stderr)
+
+	server := configOf(t, stdout)["dooray"]
+	if server.Command != "npx" {
+		t.Errorf("command = %q", server.Command)
+	}
+	if strings.Join(server.Args, " ") != "-y dooray-mcp-go@0.1.2" {
+		t.Errorf("args = %v", server.Args)
 	}
 }
 
 func TestRunFromAPackageCacheStillHonoursCommandOverride(t *testing.T) {
-	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.1")
+	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.2")
 
-	code, stdout, stderr := runCommand(t, "--print", "--token", "tok", "--command", "/usr/local/bin/dooray-mcp")
+	code, stdout, stderr := runCommand(t, "--print", "--token", "tok", "--command", "/usr/local/bin/npx")
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
-	if configOf(t, stdout)["dooray"].Command != "/usr/local/bin/dooray-mcp" {
-		t.Errorf("stdout = %s", stdout)
+
+	server := configOf(t, stdout)["dooray"]
+	if server.Command != "/usr/local/bin/npx" {
+		t.Errorf("command = %q", server.Command)
+	}
+	if strings.Join(server.Args, " ") != "-y dooray-mcp-go@0.1.2" {
+		t.Errorf("args = %v, the package arguments must survive --command", server.Args)
 	}
 }
 
@@ -202,23 +211,6 @@ func TestRunHelp(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Usage: dooray-mcp register") {
 		t.Errorf("stdout = %s", stdout)
-	}
-}
-
-func TestRunCommandOverrideRecordsThatExecutable(t *testing.T) {
-	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.1")
-
-	code, stdout, stderr := runCommand(t, "--print", "--token", "tok", "--command", "/opt/homebrew/bin/npx")
-	if code != 0 {
-		t.Fatalf("exit = %d, stderr = %s", code, stderr)
-	}
-
-	server := configOf(t, stdout)["dooray"]
-	if server.Command != "/opt/homebrew/bin/npx" {
-		t.Errorf("command = %q", server.Command)
-	}
-	if len(server.Args) != 0 {
-		t.Errorf("args = %v, nothing should be appended for a plain override", server.Args)
 	}
 }
 

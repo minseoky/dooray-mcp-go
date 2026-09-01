@@ -52,15 +52,17 @@ The install form also offers the tool mode, which defaults to `read-only`. Switc
 
 To update, open the newer bundle; to remove it, use the extension list in Claude Desktop settings.
 
-### 2. npx
+### 2. npx, one command
 
-The published `dooray-mcp-go` npm package contains the prebuilt binaries for every supported platform and a launcher that picks the right one. This route needs only Node.js 16 or newer, and it runs the server directly:
+The published `dooray-mcp-go` npm package contains the prebuilt binaries for every supported platform and a launcher that picks the right one. This route needs only Node.js 16 or newer.
 
 ```bash
-DOORAY_TOKEN="{personal-token}" npx -y dooray-mcp-go
+npx -y dooray-mcp-go@0.1.2 register --token "{personal-token}" --force
 ```
 
-It is not a way to install. `npx -y dooray-mcp-go register` is refused, because a cache path is not worth recording and copying the binary elsewhere would make it a self-replicating executable. Use route 1 or 3 to install, and do not put `npx` in an MCP config as the launch command — see [Why executables are written by the installer](#why-executables-are-written-by-the-installer).
+That writes the Claude Desktop configuration with `npx` as the launch command, so every start fetches the pinned version from the cache. Restart Claude Desktop afterwards.
+
+See [What is and is not written as an executable](#what-is-and-is-not-written-as-an-executable) for the endpoint-protection tradeoff this carries.
 
 ### 3. Install script
 
@@ -146,9 +148,15 @@ DOORAY_TOKEN="{personal-token}" dooray-mcp --mode read-only
 
 ## Claude Desktop
 
-Claude Desktop has no CLI, so it is configured by merging into `claude_desktop_config.json`. The `.mcpb` bundle in route 1 does that for you; the steps below are for an already-installed binary.
+Claude Desktop has no CLI, so it is configured by merging into `claude_desktop_config.json`. `register` does that merge, whether it runs through npx or from an installed binary.
 
 ### Register from the shell
+
+```sh
+npx -y dooray-mcp-go@0.1.2 register --token "{personal-token}" --force
+```
+
+From an installed binary, the same command without npx:
 
 ```sh
 dooray-mcp register --token "{personal-token}"
@@ -166,7 +174,7 @@ What the command does:
 - Prints the file it wrote, so the location can be confirmed. If no configuration existed anywhere it searched, it says so and lists the locations, because that is also what happens when an install keeps its configuration somewhere else. Use `--config <path>` to point at that file directly.
 - Copies the current file to `claude_desktop_config.json.bak` before writing.
 - Merges only the `mcpServers.<name>` entry, leaving every other server and top-level setting untouched.
-- Records the absolute path it is running from as `command`, and writes no executable of its own. Running it out of a package cache is refused instead.
+- Records `npx -y dooray-mcp-go@<version>` as `command` when it runs through the npm wrapper, and otherwise the absolute path it is running from. It writes no executable either way.
 - Refuses to overwrite an existing server of the same name unless `--force` is passed.
 - Writes a new config as owner-only (`0600`), because the file holds the API token.
 
@@ -188,13 +196,13 @@ dooray-mcp register --print --token "{personal-token}"
 
 If Claude Desktop does not pick the server up, check that the file `register` reported is the one Claude Desktop actually reads. Its Settings dialog exposes the configuration through "Edit Config", which reveals the path in use on that machine.
 
-### Why executables are written by the installer
+### What is and is not written as an executable
 
-Neither the server nor `register` ever writes an executable, and that constraint shapes the install routes.
+Endpoint protection watches for three things that together describe a dropper: a process creating a PE file, a process copying its own image, and a process launching an executable it just wrote. Ordinary software trips these as easily as malware does.
 
-Endpoint protection watches for three things that together describe a dropper: a process creating a PE file, a process copying its own image, and a process launching an executable it just wrote. Ordinary software trips these as easily as malware does. An earlier version of `register` copied the binary out of the npx cache to give the config a stable path, and a Windows scanner reported all three at once — the copy was a PE file, it was the process's own image, and npx had unpacked and launched that same process.
+**This binary never writes an executable.** Not on registration, not at runtime. An earlier version copied itself out of the npx cache to give the config a stable path, and a Windows scanner reported all three at once — the copy was a PE file, it was the process's own image, and npx had unpacked and launched that same process. Self-replication is the worst of the three and is not worth a stable path, so it was removed.
 
-So writing executables is left to the processes that should be doing it: Claude Desktop when it installs a bundle, or the install script. `register` only ever records the path it is already running from, and refuses to run from a package cache rather than copy itself out of one. The install script does not launch what it just installed either — it prints the `register` command for you to run afterwards, as a separate process.
+**Launching through npx does trip the third one.** npx unpacks the executable and spawns it in the same step, which reads as a parent process launching what it dropped. That is inherent to the npx route and is accepted deliberately. Routes 1 and 3 avoid it, because Claude Desktop or the install script writes the binary and something else launches it later.
 
 None of this signs the binaries. A scanner that flags the file itself, rather than what a process did with it, is unaffected; that needs a code-signing certificate or a false-positive report.
 

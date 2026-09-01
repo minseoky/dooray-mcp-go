@@ -2,15 +2,27 @@
 
 This package ships the prebuilt `dooray-mcp` Go binaries and a launcher that selects the one matching the current platform, so the server can be installed and registered with a single `npx` command.
 
-Run the server directly:
+Register it with Claude Desktop in one command:
 
 ```sh
-DOORAY_TOKEN="{personal-token}" npx -y dooray-mcp-go
+npx -y dooray-mcp-go register --token "{personal-token}" --force
 ```
 
-This package is not an installer. `register` is refused when run from the npx cache, because a cache path is not worth recording and copying the binary elsewhere would make it a self-replicating executable.
+That writes the configuration with `npx` as the launch command:
 
-To install and configure Claude Desktop, use the `.mcpb` bundle or an install script from the [repository README](https://github.com/minseoky/dooray-mcp-go#install). Do not put `npx` in an MCP config as the launch command either: every start would unpack the executable and spawn it from one process, which endpoint protection reads as a dropper launching its payload.
+```json
+{
+  "mcpServers": {
+    "dooray": {
+      "command": "npx",
+      "args": ["-y", "dooray-mcp-go@0.1.2"],
+      "env": { "DOORAY_TOKEN": "{personal-token}" }
+    }
+  }
+}
+```
+
+Nothing is copied or installed by the binary itself. Every start does unpack and spawn the executable in one step, which endpoint protection can read as a dropper launching its payload; the [repository README](https://github.com/minseoky/dooray-mcp-go#what-is-and-is-not-written-as-an-executable) covers that tradeoff and the routes that avoid it.
 
 Full documentation lives in the [repository README](https://github.com/minseoky/dooray-mcp-go#readme).
 
