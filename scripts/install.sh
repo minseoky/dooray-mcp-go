@@ -26,17 +26,50 @@ case "$(uname -m)" in
 esac
 
 ASSET="dooray-mcp_${OS}_${ARCH}.tar.gz"
+CHECKSUM_FILE="SHA256SUMS"
 if [ "$VERSION" = "latest" ]; then
-  URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"
+  BASE_URL="https://github.com/${REPO}/releases/latest/download"
 else
-  URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}"
+  BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
 fi
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-echo "downloading ${URL}"
-curl -fsSL "$URL" -o "$TMP_DIR/$ASSET"
+echo "downloading ${BASE_URL}/${ASSET}"
+curl -fsSL "${BASE_URL}/${ASSET}" -o "$TMP_DIR/$ASSET"
+
+# The release publishes SHA256SUMS alongside the archives. A mismatch means the
+# download was corrupted or tampered with, so installation must not continue.
+echo "downloading ${BASE_URL}/${CHECKSUM_FILE}"
+if ! curl -fsSL "${BASE_URL}/${CHECKSUM_FILE}" -o "$TMP_DIR/$CHECKSUM_FILE"; then
+  echo "error: could not download ${CHECKSUM_FILE}; refusing to install unverified files." >&2
+  exit 1
+fi
+
+EXPECTED="$(awk -v asset="$ASSET" '$2 == asset || $2 == "*" asset { print $1 }' "$TMP_DIR/$CHECKSUM_FILE" | head -n 1)"
+if [ -z "$EXPECTED" ]; then
+  echo "error: ${CHECKSUM_FILE} has no entry for ${ASSET}; refusing to install." >&2
+  exit 1
+fi
+
+if command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL="$(sha256sum "$TMP_DIR/$ASSET" | awk '{ print $1 }')"
+elif command -v shasum >/dev/null 2>&1; then
+  ACTUAL="$(shasum -a 256 "$TMP_DIR/$ASSET" | awk '{ print $1 }')"
+else
+  echo "error: neither sha256sum nor shasum is available; cannot verify the download." >&2
+  exit 1
+fi
+
+if [ "$EXPECTED" != "$ACTUAL" ]; then
+  echo "error: checksum mismatch for ${ASSET}" >&2
+  echo "  expected: ${EXPECTED}" >&2
+  echo "  actual:   ${ACTUAL}" >&2
+  exit 1
+fi
+echo "checksum verified: ${ACTUAL}"
+
 tar xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
 
 mkdir -p "$BIN_DIR"

@@ -7,7 +7,7 @@ This package ships the prebuilt `dooray-mcp` Go binaries and a launcher that sel
   "mcpServers": {
     "dooray": {
       "command": "npx",
-      "args": ["-y", "dooray-mcp-go@0.1.0"],
+      "args": ["-y", "dooray-mcp-go@0.1.1"],
       "env": {
         "DOORAY_TOKEN": "{personal-token}"
       }

@@ -1,6 +1,6 @@
 {
   "name": "dooray-mcp-go",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Dooray MCP server implemented in Go, distributed as prebuilt binaries",
   "type": "module",
   "repository": {
@@ -30,9 +30,19 @@
   ],
   "keywords": [
     "mcp",
-    "dooray",
+    "mcp-server",
     "model-context-protocol",
-    "go"
+    "dooray",
+    "dooray-mcp",
+    "dooray mcp",
+    "nhn",
+    "nhn cloud",
+    "nhn dooray",
+    "go",
+    "golang",
+    "ai",
+    "llm",
+    "claude"
   ],
   "license": "MIT"
 }

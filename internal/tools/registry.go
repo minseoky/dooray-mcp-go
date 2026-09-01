@@ -26,7 +26,8 @@ func Definitions() []mcp.Tool {
 				jsonschema.Prop("operation", jsonschema.Enum([]string{"send"}, "The operation to perform")),
 				jsonschema.Prop("to", jsonschema.String("recipient organizationMemberId")),
 				jsonschema.Prop("message", jsonschema.String("message to send")),
-			}, "operation", "to", "message"),
+				jsonschema.Prop("confirm", jsonschema.Boolean(confirmDescription)),
+			}, "operation", "to", "message", "confirm"),
 		},
 		{
 			Name:        "dooray_calendar_calendars",
@@ -63,7 +64,8 @@ func Definitions() []mcp.Tool {
 				jsonschema.Prop("recurrenceBymonth", jsonschema.String("recurrence by month, 1-12")),
 				jsonschema.Prop("recurrenceBymonthday", jsonschema.String("recurrence by day of month, 1-31")),
 				jsonschema.Prop("recurrenceTimezoneName", jsonschema.String("timezone for recurrence rule, default Asia/Seoul")),
-			}, "operation", "subject", "content", "startedAt", "endedAt"),
+				jsonschema.Prop("confirm", jsonschema.Boolean(confirmDescription)),
+			}, "operation", "subject", "content", "startedAt", "endedAt", "confirm"),
 		},
 		{
 			Name:        "dooray_account_members",
@@ -166,7 +168,8 @@ func Definitions() []mcp.Tool {
 					jsonschema.Prop("mimeType", jsonschema.Enum([]string{"text/x-markdown"}, "comment body MIME type")),
 					jsonschema.Prop("content", jsonschema.String("comment content")),
 				}, "mimeType", "content")),
-			}, "operation", "projectId", "postId", "body"),
+				jsonschema.Prop("confirm", jsonschema.Boolean(confirmDescription)),
+			}, "operation", "projectId", "postId", "body", "confirm"),
 		},
 		{
 			Name:        "dooray_post_log_update",
@@ -180,7 +183,8 @@ func Definitions() []mcp.Tool {
 					jsonschema.Prop("mimeType", jsonschema.Enum([]string{"text/x-markdown"}, "comment body MIME type")),
 					jsonschema.Prop("content", jsonschema.String("updated comment content")),
 				}, "mimeType", "content")),
-			}, "operation", "projectId", "postId", "logId", "body"),
+				jsonschema.Prop("confirm", jsonschema.Boolean(confirmDescription)),
+			}, "operation", "projectId", "postId", "logId", "body", "confirm"),
 		},
 		{
 			Name:        "dooray_post_files",

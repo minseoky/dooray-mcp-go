@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/minseoky/dooray-mcp-go/internal/dooray"
+	"github.com/minseoky/dooray-mcp-go/internal/jsonschema"
 )
 
 type capture struct {
@@ -160,6 +161,7 @@ func TestPostLogCreateWrapsBody(t *testing.T) {
 		"operation": "create_log",
 		"projectId": "1",
 		"postId":    "2",
+		"confirm":   true,
 		"body": map[string]any{
 			"mimeType": "text/x-markdown",
 			"content":  "hello",
@@ -188,6 +190,7 @@ func TestPostLogUpdateUsesPut(t *testing.T) {
 		"projectId": "1",
 		"postId":    "2",
 		"logId":     "3",
+		"confirm":   true,
 		"body":      map[string]any{"mimeType": "text/x-markdown", "content": "edited"},
 	}); err != nil {
 		t.Fatalf("call: %v", err)
@@ -206,7 +209,7 @@ func TestPostLogCreateRejectsMissingBody(t *testing.T) {
 	registry := newRegistry(t, false, &recorded)
 
 	_, err := call(t, registry, "dooray_post_log_create", map[string]any{
-		"operation": "create_log", "projectId": "1", "postId": "2",
+		"operation": "create_log", "projectId": "1", "postId": "2", "confirm": true,
 	})
 	if err == nil || !strings.Contains(err.Error(), "body must be an object") {
 		t.Errorf("error = %v", err)
@@ -242,6 +245,7 @@ func TestCalendarPostEventDefaultsAndRecurrence(t *testing.T) {
 
 	if _, err := call(t, registry, "dooray_calendar_post_event", map[string]any{
 		"operation":           "create_event",
+		"confirm":             true,
 		"subject":             "standup",
 		"content":             "<p>daily</p>",
 		"startedAt":           "2025-04-11T09:00:00+09:00",
@@ -278,6 +282,7 @@ func TestCalendarPostEventOmitsRecurrenceWhenUnset(t *testing.T) {
 
 	if _, err := call(t, registry, "dooray_calendar_post_event", map[string]any{
 		"operation": "create_event",
+		"confirm":   true,
 		"subject":   "one off",
 		"content":   "x",
 		"startedAt": "2025-04-11T09:00:00+09:00",
@@ -315,6 +320,7 @@ func TestMessengerSendsDirectMessage(t *testing.T) {
 
 	if _, err := call(t, registry, "dooray_messenger", map[string]any{
 		"operation": "send",
+		"confirm":   true,
 		"to":        "12345",
 		"message":   "hi",
 	}); err != nil {
@@ -345,5 +351,125 @@ func TestOSReturnsFormattedLocalTime(t *testing.T) {
 	}
 	if _, err := time.ParseInLocation("2006-01-02 15:04:05", result.Time, time.Local); err != nil {
 		t.Errorf("time = %q: %v", result.Time, err)
+	}
+}
+
+// writeToolCalls are minimal valid arguments for every write tool, without the
+// confirmation flag.
+func writeToolCalls() map[string]map[string]any {
+	return map[string]map[string]any{
+		"dooray_messenger": {
+			"operation": "send", "to": "12345", "message": "hi",
+		},
+		"dooray_calendar_post_event": {
+			"operation": "create_event", "subject": "s", "content": "c",
+			"startedAt": "2025-04-11T09:00:00+09:00", "endedAt": "2025-04-11T09:15:00+09:00",
+		},
+		"dooray_post_log_create": {
+			"operation": "create_log", "projectId": "1", "postId": "2",
+			"body": map[string]any{"mimeType": "text/x-markdown", "content": "hello"},
+		},
+		"dooray_post_log_update": {
+			"operation": "update_log", "projectId": "1", "postId": "2", "logId": "3",
+			"body": map[string]any{"mimeType": "text/x-markdown", "content": "edited"},
+		},
+	}
+}
+
+func TestWriteToolsRequireConfirmation(t *testing.T) {
+	for name, input := range writeToolCalls() {
+		// A missing confirm, an explicitly false one, and a non-boolean all
+		// have to be refused before any request reaches Dooray.
+		for _, confirm := range []any{nil, false, "true", float64(1)} {
+			var recorded capture
+			registry := newRegistry(t, false, &recorded)
+
+			arguments := map[string]any{}
+			for key, value := range input {
+				arguments[key] = value
+			}
+			if confirm != nil {
+				arguments["confirm"] = confirm
+			}
+
+			_, err := call(t, registry, name, arguments)
+			if err == nil {
+				t.Errorf("%s with confirm=%#v was executed", name, confirm)
+				continue
+			}
+			if !strings.Contains(err.Error(), "confirm must be true") {
+				t.Errorf("%s with confirm=%#v: error = %v", name, confirm, err)
+			}
+			if recorded.method != "" {
+				t.Errorf("%s with confirm=%#v reached Dooray: %s %s", name, confirm, recorded.method, recorded.path)
+			}
+		}
+	}
+}
+
+func TestWriteToolsRunWithConfirmation(t *testing.T) {
+	for name, input := range writeToolCalls() {
+		var recorded capture
+		registry := newRegistry(t, false, &recorded)
+
+		arguments := map[string]any{"confirm": true}
+		for key, value := range input {
+			arguments[key] = value
+		}
+
+		if _, err := call(t, registry, name, arguments); err != nil {
+			t.Errorf("%s with confirm=true: %v", name, err)
+			continue
+		}
+		if recorded.method == "" {
+			t.Errorf("%s with confirm=true did not reach Dooray", name)
+		}
+		if strings.Contains(recorded.body, "confirm") {
+			t.Errorf("%s forwarded the confirmation flag to Dooray: %s", name, recorded.body)
+		}
+	}
+}
+
+func TestWriteToolSchemasRequireConfirm(t *testing.T) {
+	for _, tool := range Definitions() {
+		if !IsWriteTool(tool.Name) {
+			continue
+		}
+
+		schema := tool.InputSchema.(map[string]any)
+		required := schema["required"].([]string)
+		found := false
+		for _, name := range required {
+			if name == "confirm" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s schema does not require confirm: %v", tool.Name, required)
+		}
+
+		properties := schema["properties"].(jsonschema.Properties)
+		declared := false
+		for _, property := range properties {
+			if property.Name == "confirm" {
+				declared = true
+			}
+		}
+		if !declared {
+			t.Errorf("%s schema does not declare a confirm property", tool.Name)
+		}
+	}
+}
+
+func TestReadToolsDoNotRequireConfirm(t *testing.T) {
+	for _, tool := range Definitions() {
+		if IsWriteTool(tool.Name) {
+			continue
+		}
+		for _, name := range tool.InputSchema.(map[string]any)["required"].([]string) {
+			if name == "confirm" {
+				t.Errorf("read tool %s must not require confirm", tool.Name)
+			}
+		}
 	}
 }

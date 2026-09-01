@@ -97,3 +97,18 @@ func coalesce(input map[string]any, key string, fallback any) any {
 	}
 	return value
 }
+
+// confirmDescription is shared by every write tool so the confirmation
+// parameter reads the same way wherever it appears.
+const confirmDescription = "must be true to execute this write operation; set it only after the user has confirmed the change"
+
+// requireConfirmation rejects a write call that does not carry an explicit
+// confirm=true. Input validation alone is not enough for a tool that mutates
+// Dooray state, so the caller has to opt in on every single call.
+func requireConfirmation(input map[string]any) error {
+	confirmed, ok := input["confirm"].(bool)
+	if !ok || !confirmed {
+		return fmt.Errorf("confirm must be true to execute this write operation")
+	}
+	return nil
+}

@@ -17,6 +17,21 @@ This MCP server does not wrap every Dooray API. It focuses on frequently used ac
 
 Most `/admin/v1` and `/admin/v2` administration APIs are intentionally not exposed, especially write-capable administration endpoints.
 
+## What the MCP client receives
+
+Every tool returns the Dooray API response as-is. A task body, comment, calendar entry, or member record is passed to the MCP client unchanged, and from there to whatever model backs it — including anything the original Dooray content happens to contain, such as personal data or material your organization classifies as confidential.
+
+The server does not classify, redact, or filter that content, and it cannot tell which posts are sensitive. Deciding what may leave Dooray is the caller's responsibility:
+
+- Scope requests to the projects and posts that actually need to be read, rather than sweeping whole projects.
+- Treat `dooray_post_file_download` the same way. It writes attachments, including inline body images, to a local temporary directory that is not cleaned up automatically.
+- Run with `--mode read-only` when a session only needs to read, so no tool can write back to Dooray.
+- Check your organization's policy before pointing this at projects holding personal or confidential data.
+
+## Write tools require confirmation
+
+The four write-capable tools — `dooray_messenger`, `dooray_calendar_post_event`, `dooray_post_log_create`, and `dooray_post_log_update` — take a required `confirm` boolean. The handler refuses the call unless it is exactly `true`, before any request reaches Dooray, so passing schema validation is not on its own enough to send a message or post a comment. Set it only after the user has confirmed the specific change.
+
 ## Read-only mode
 
 Dooray personal API tokens are not issued with separate read-only and write permissions. A token that can call write APIs may still have those permissions at the Dooray API level.
@@ -49,7 +64,9 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/minseoky/dooray-mcp-go/main/scripts/install.ps1 | iex
 ```
 
-Both scripts drop `dooray-mcp` into a per-user directory and put that directory on `PATH`, so the MCP config can use the bare command name on either OS.
+Both scripts download `SHA256SUMS` from the same release, verify the archive against it, and abort without installing anything if the checksum is missing or does not match. They then drop `dooray-mcp` into a per-user directory and put that directory on `PATH`, so the MCP config can use the bare command name on either OS.
+
+Checksum verification protects against a corrupted or substituted download. It does not by itself prove the release is genuine, since the checksum file comes from the same release; the binaries are not signed with GPG or cosign.
 
 Install and register with Claude Desktop in one go:
 
@@ -73,7 +90,15 @@ go install github.com/minseoky/dooray-mcp-go@latest
 
 ### 4. Direct download
 
-Grab the archive for your platform from the [releases page](https://github.com/minseoky/dooray-mcp-go/releases), unpack it, and point the MCP config at the absolute path.
+Grab the archive for your platform from the [releases page](https://github.com/minseoky/dooray-mcp-go/releases), unpack it, and point the MCP config at the absolute path. Verify it against `SHA256SUMS` from the same release first:
+
+```sh
+shasum -a 256 -c SHA256SUMS --ignore-missing
+```
+
+```powershell
+(Get-FileHash .\dooray-mcp_windows_amd64.zip -Algorithm SHA256).Hash
+```
 
 The binaries are not code-signed. Downloading them through a browser attaches a quarantine flag, so the first run is blocked by Gatekeeper on macOS and by SmartScreen on Windows. Clear it once:
 
@@ -271,18 +296,18 @@ Tagging `vX.Y.Z` runs `.github/workflows/release.yml`, which tests, cross-compil
 
 ## Tools
 
-- `dooray_messenger`
+- `dooray_messenger` (`confirm` must be `true`)
 - `dooray_calendar_calendars`
 - `dooray_calendar_events`
-- `dooray_calendar_post_event`
+- `dooray_calendar_post_event` (`confirm` must be `true`)
 - `dooray_account_members`
 - `dooray_account_member`
 - `dooray_project`
 - `dooray_posts` (finds task posts and exposes the task body plus `fileIdList`, which can contain inline body images/files)
 - `dooray_post_logs` (find comments and activity logs for a post)
 - `dooray_post_log` (find one comment or activity log by ID)
-- `dooray_post_log_create` (add a comment to a post; body is `{ "mimeType": "text/x-markdown", "content": "..." }`)
-- `dooray_post_log_update` (update a comment or activity log with the same body format)
+- `dooray_post_log_create` (add a comment to a post; body is `{ "mimeType": "text/x-markdown", "content": "..." }`, and `confirm` must be `true`)
+- `dooray_post_log_update` (update a comment or activity log with the same body format, and `confirm` must be `true`)
 - `dooray_post_files` (lists regular attachments; an empty result or `AUTH_FORBIDDEN_ERROR` does not determine whether `fileIdList` items can be downloaded)
 - `dooray_post_file_download` (downloads IDs from `dooray_posts.fileIdList`, including inline body images, or regular attachment file IDs with `media=raw`; authorization is limited to the configured API origin and HTTPS `file-api.dooray.com`)
 - `os`
@@ -300,7 +325,22 @@ Use this workflow when a request asks for a Dooray task body, an image embedded 
 
 `dooray_post_files` is exposed for listing regular attachments, but it is separate from the `fileIdList` path used by body files. It can return an empty list or `AUTH_FORBIDDEN_ERROR` even when direct downloads from `dooray_posts.fileIdList` work. Therefore, neither outcome should be reported as proof that a body image or file is inaccessible. A transport failure or timeout from `dooray_post_file_download` is also not a permission result, and should be retried or reported separately. Report a file as forbidden or missing only when the direct download returns a terminal Dooray response such as `403` or `404` with the verified `projectId`, `postId`, and `fileId`.
 
-### Read-only mode tools
+### What the MCP client receives
+
+Every tool returns the Dooray API response as-is. A task body, comment, calendar entry, or member record is passed to the MCP client unchanged, and from there to whatever model backs it — including anything the original Dooray content happens to contain, such as personal data or material your organization classifies as confidential.
+
+The server does not classify, redact, or filter that content, and it cannot tell which posts are sensitive. Deciding what may leave Dooray is the caller's responsibility:
+
+- Scope requests to the projects and posts that actually need to be read, rather than sweeping whole projects.
+- Treat `dooray_post_file_download` the same way. It writes attachments, including inline body images, to a local temporary directory that is not cleaned up automatically.
+- Run with `--mode read-only` when a session only needs to read, so no tool can write back to Dooray.
+- Check your organization's policy before pointing this at projects holding personal or confidential data.
+
+## Write tools require confirmation
+
+The four write-capable tools — `dooray_messenger`, `dooray_calendar_post_event`, `dooray_post_log_create`, and `dooray_post_log_update` — take a required `confirm` boolean. The handler refuses the call unless it is exactly `true`, before any request reaches Dooray, so passing schema validation is not on its own enough to send a message or post a comment. Set it only after the user has confirmed the specific change.
+
+## Read-only mode tools
 
 When `--mode read-only` or `DOORAY_MCP_MODE=read-only` is set, write-capable Dooray tools are not exposed in `tools/list` and cannot be called through `tools/call`.
 

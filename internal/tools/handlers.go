@@ -62,6 +62,9 @@ func messenger(client *dooray.Client) mcp.Handler {
 		if err := requireOperation(input, "send"); err != nil {
 			return "", err
 		}
+		if err := requireConfirmation(input); err != nil {
+			return "", err
+		}
 		message, err := requireString(input, "message")
 		if err != nil {
 			return "", err
@@ -112,6 +115,9 @@ func calendarEvents(client *dooray.Client) mcp.Handler {
 func calendarPostEvent(client *dooray.Client) mcp.Handler {
 	return func(ctx context.Context, input map[string]any) (string, error) {
 		if err := requireOperation(input, "create_event"); err != nil {
+			return "", err
+		}
+		if err := requireConfirmation(input); err != nil {
 			return "", err
 		}
 		subject, err := requireString(input, "subject")
@@ -289,6 +295,9 @@ func postLogCreate(client *dooray.Client) mcp.Handler {
 		if err := requireOperation(input, "create_log"); err != nil {
 			return "", err
 		}
+		if err := requireConfirmation(input); err != nil {
+			return "", err
+		}
 		projectID, postID, err := requirePostPath(input)
 		if err != nil {
 			return "", err
@@ -306,6 +315,9 @@ func postLogCreate(client *dooray.Client) mcp.Handler {
 func postLogUpdate(client *dooray.Client) mcp.Handler {
 	return func(ctx context.Context, input map[string]any) (string, error) {
 		if err := requireOperation(input, "update_log"); err != nil {
+			return "", err
+		}
+		if err := requireConfirmation(input); err != nil {
 			return "", err
 		}
 		projectID, postID, err := requirePostPath(input)
