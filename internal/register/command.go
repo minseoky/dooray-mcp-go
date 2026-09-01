@@ -275,8 +275,8 @@ Options:
   --name <name>       MCP server name in the config. Default: dooray
   --mode read-only    Register the server with only read-only tools exposed.
   --client <client>   Target client. Only claude-desktop is supported.
-  --command <path>    Command to record. Defaults to this binary's absolute
-                      path, or to npx when run through the npm wrapper.
+  --command <path>    Executable to record. Defaults to the installed path.
+                      Any arguments the default would carry are kept.
   --config <path>     Configuration file to merge into. Defaults to the
                       platform's Claude Desktop config path.
   --install-dir <dir> Directory to install the binary into. Defaults to
