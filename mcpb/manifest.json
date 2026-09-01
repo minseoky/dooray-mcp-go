@@ -1,0 +1,53 @@
+{
+  "manifest_version": "0.3",
+  "name": "dooray-mcp-go",
+  "display_name": "Dooray",
+  "version": "0.1.1",
+  "description": "Read and write Dooray projects, tasks, calendars, and messages.",
+  "long_description": "Exposes Dooray's account, calendar, project, post, attachment, and messenger APIs to Claude. Runs as a single static binary with no runtime dependency. Write-capable tools require an explicit confirmation on every call, and read-only mode hides them entirely.",
+  "author": {
+    "name": "minseoky",
+    "url": "https://github.com/minseoky"
+  },
+  "homepage": "https://github.com/minseoky/dooray-mcp-go",
+  "documentation": "https://github.com/minseoky/dooray-mcp-go#readme",
+  "support": "https://github.com/minseoky/dooray-mcp-go/issues",
+  "license": "MIT",
+  "keywords": ["dooray", "project", "task", "calendar", "messenger"],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/dooray-mcp",
+    "mcp_config": {
+      "command": "${__dirname}/server/dooray-mcp",
+      "args": ["--mode", "${user_config.mode}"],
+      "env": {
+        "DOORAY_TOKEN": "${user_config.token}"
+      },
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/server/dooray-mcp.exe"
+        }
+      }
+    }
+  },
+  "user_config": {
+    "token": {
+      "type": "string",
+      "title": "Dooray API token",
+      "description": "Personal API token issued from Dooray. Settings, then API, then create a personal token.",
+      "sensitive": true,
+      "required": true
+    },
+    "mode": {
+      "type": "string",
+      "title": "Tool mode",
+      "description": "Use read-only to hide every tool that writes to Dooray. Use full to allow sending messages and posting comments.",
+      "default": "read-only",
+      "required": true
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32", "linux"]
+  }
+}

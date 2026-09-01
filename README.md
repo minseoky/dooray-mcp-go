@@ -42,7 +42,17 @@ For safer installations, this server provides a read-only mode at the MCP tool l
 
 Pick whichever route fits how the machine is already set up. All of them end at the same binary.
 
-### 1. npx
+### 1. Double-click installer, no terminal
+
+Download `dooray-mcp-go.mcpb` from the [latest release](https://github.com/minseoky/dooray-mcp-go/releases/latest) and open it. Claude Desktop shows an install dialog, asks for the Dooray token in a form, and stores it in the OS keychain rather than in a config file. Nothing else is typed, and no JSON is edited.
+
+One bundle covers every machine: the macOS binary carries both architectures, and the Windows build runs on Windows on ARM through emulation.
+
+The install form also offers the tool mode, which defaults to `read-only`. Switch it to `full` only when the session needs to send messages or post comments.
+
+To update, open the newer bundle; to remove it, use the extension list in Claude Desktop settings.
+
+### 2. npx
 
 The published `dooray-mcp-go` npm package contains the prebuilt binaries for every supported platform and a launcher that picks the right one. Nothing is compiled or downloaded at install time beyond the package itself. This route needs only Node.js 16 or newer.
 
@@ -52,7 +62,7 @@ npx -y dooray-mcp-go register --token "{personal-token}"
 
 `register` copies the binary out of the npx cache into a stable per-user directory and points the config at that path. Do not leave `npx -y dooray-mcp-go` in an MCP config as the launch command — see [Why the config points at an installed path](#why-the-config-points-at-an-installed-path).
 
-### 2. Install script
+### 3. Install script
 
 macOS and Linux:
 
@@ -82,7 +92,7 @@ irm https://raw.githubusercontent.com/minseoky/dooray-mcp-go/main/scripts/instal
 & "$env:LOCALAPPDATA\Programs\dooray-mcp\dooray-mcp.exe" register --token "{personal-token}"
 ```
 
-### 3. Go toolchain
+### 4. Go toolchain
 
 ```bash
 go install github.com/minseoky/dooray-mcp-go@latest
@@ -90,7 +100,7 @@ go install github.com/minseoky/dooray-mcp-go@latest
 
 `go install` names the binary after the module, so this installs `dooray-mcp-go` into `$(go env GOPATH)/bin`. Use that name in the MCP config, or rename it to `dooray-mcp`.
 
-### 4. Direct download
+### 5. Direct download
 
 Grab the archive for your platform from the [releases page](https://github.com/minseoky/dooray-mcp-go/releases), unpack it, and point the MCP config at the absolute path. Verify it against `SHA256SUMS` from the same release first:
 
@@ -275,6 +285,7 @@ dooray-mcp-go/
 │   ├── mcp/server.go              # JSON-RPC 2.0 stdio transport and MCP methods
 │   ├── register/                  # `register` subcommand and config merging
 │   └── tools/                     # tool definitions, handlers, argument helpers
+├── mcpb/manifest.json             # double-click installer bundle manifest
 ├── npm/                           # npm wrapper that ships the prebuilt binaries
 ├── scripts/install.sh             # macOS and Linux installer
 ├── scripts/install.ps1            # Windows installer
@@ -290,7 +301,10 @@ make            # gofmt, vet, test, and build ./dooray-mcp
 make test
 make release    # cross-compile every platform into dist/ with SHA256SUMS
 make npm-stage  # stage the binaries into the npm wrapper package
+make bundle     # build dist/dooray-mcp-go.mcpb, the double-click installer
 ```
+
+`make bundle` needs `lipo`, so it runs on macOS; the release workflow builds it on a macOS runner.
 
 `make release` builds `darwin/arm64`, `darwin/amd64`, `windows/amd64`, `windows/arm64`, `linux/amd64`, and `linux/arm64` with `CGO_ENABLED=0`, so each binary is static and runs on a clean machine.
 

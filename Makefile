@@ -57,3 +57,26 @@ npm-stage: release
 
 npm-pack: npm-stage
 	cd npm && npm pack
+
+# Builds a single .mcpb bundle that installs by double-click in Claude Desktop,
+# with no terminal and no JSON editing.
+#
+# One bundle serves every workshop machine: the macOS binary is a universal
+# Mach-O covering both architectures, and the Windows x64 build also runs on
+# Windows on ARM through emulation. manifest.json cannot select on architecture,
+# only on platform, which is why the macOS slices have to be merged.
+.PHONY: bundle
+bundle:
+	@rm -rf $(DIST)/mcpb && mkdir -p $(DIST)/mcpb/server
+	@echo "building macOS universal binary"
+	@CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST)/mcpb/.arm64 .
+	@CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST)/mcpb/.amd64 .
+	@lipo -create -output $(DIST)/mcpb/server/dooray-mcp $(DIST)/mcpb/.arm64 $(DIST)/mcpb/.amd64
+	@rm -f $(DIST)/mcpb/.arm64 $(DIST)/mcpb/.amd64
+	@echo "building windows binary"
+	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST)/mcpb/server/dooray-mcp.exe .
+	@cp mcpb/manifest.json $(DIST)/mcpb/manifest.json
+	@cp README.md LICENSE $(DIST)/mcpb/
+	@cd $(DIST)/mcpb && zip -qr ../dooray-mcp-go.mcpb manifest.json server README.md LICENSE
+	@rm -rf $(DIST)/mcpb
+	@ls -lh $(DIST)/dooray-mcp-go.mcpb
