@@ -9,21 +9,8 @@ import (
 	"testing"
 )
 
-// runCommand always pins --install-dir to a temporary directory unless the
-// case supplies its own, so a test can never write into the real home.
 func runCommand(t *testing.T, argv ...string) (int, string, string) {
 	t.Helper()
-
-	pinned := true
-	for _, arg := range argv {
-		if arg == "--install-dir" || strings.HasPrefix(arg, "--install-dir=") {
-			pinned = false
-		}
-	}
-	if pinned {
-		argv = append([]string{"--install-dir", t.TempDir()}, argv...)
-	}
-
 	var stdout, stderr bytes.Buffer
 	code := Run(argv, &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
@@ -81,58 +68,73 @@ func TestRunPrintDoesNotWriteConfig(t *testing.T) {
 	}
 }
 
-func TestRunRecordsInstalledPathInsteadOfNpx(t *testing.T) {
-	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.0")
-	installDir := t.TempDir()
+func TestRunRefusesToRegisterFromAPackageCache(t *testing.T) {
+	// Recording an npx cache path would be worthless, and copying the binary
+	// somewhere stable would make it a self-replicating executable. Neither is
+	// acceptable, so the command explains what to do instead.
+	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.1")
 
-	code, stdout, stderr := runCommand(t, "--print", "--token", "tok", "--install-dir", installDir)
-	if code != 0 {
-		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	code, _, stderr := runCommand(t, "--print", "--token", "tok")
+	if code == 0 {
+		t.Fatal("registering from a package cache must fail")
 	}
-
-	// Launching through npx would make the process that unpacks the binary the
-	// same one that runs it, so the config must point at a stable path.
-	server := configOf(t, stdout)["dooray"]
-	if server.Command == "npx" || strings.Contains(strings.Join(server.Args, " "), "dooray-mcp-go@") {
-		t.Errorf("config still launches through npx: %+v", server)
-	}
-	if filepath.Dir(server.Command) != installDir {
-		t.Errorf("command = %q, want it inside %q", server.Command, installDir)
+	if !strings.Contains(stderr, "package cache") || !strings.Contains(stderr, ".mcpb") {
+		t.Errorf("stderr = %s", stderr)
 	}
 }
 
-func TestRunNoInstallKeepsNpxLaunch(t *testing.T) {
-	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.0")
+func TestRunFromAPackageCacheStillHonoursCommandOverride(t *testing.T) {
+	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.1")
 
-	code, stdout, stderr := runCommand(t, "--print", "--token", "tok", "--no-install")
+	code, stdout, stderr := runCommand(t, "--print", "--token", "tok", "--command", "/usr/local/bin/dooray-mcp")
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
-
-	server := configOf(t, stdout)["dooray"]
-	if server.Command != "npx" {
-		t.Errorf("command = %q", server.Command)
-	}
-	if strings.Join(server.Args, " ") != "-y dooray-mcp-go@0.1.0" {
-		t.Errorf("args = %v", server.Args)
+	if configOf(t, stdout)["dooray"].Command != "/usr/local/bin/dooray-mcp" {
+		t.Errorf("stdout = %s", stdout)
 	}
 }
 
-func TestPrintDoesNotInstallTheBinary(t *testing.T) {
-	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.0")
-	installDir := t.TempDir()
+func TestRunRecordsItsOwnAbsolutePath(t *testing.T) {
+	t.Setenv(npmLauncherEnv, "")
 
-	code, _, stderr := runCommand(t, "--print", "--token", "tok", "--install-dir", installDir)
+	code, stdout, stderr := runCommand(t, "--print", "--token", "tok")
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
 
-	entries, err := os.ReadDir(installDir)
+	command := configOf(t, stdout)["dooray"].Command
+	if !filepath.IsAbs(command) {
+		t.Errorf("command = %q must be absolute", command)
+	}
+	if command == "npx" {
+		t.Error("command must not be npx")
+	}
+}
+
+func TestRunWritesNoExecutable(t *testing.T) {
+	// The server binary must never produce another executable; that is what
+	// made endpoint protection report self-replication.
+	t.Setenv(npmLauncherEnv, "")
+	configDir := t.TempDir()
+
+	code, _, stderr := runCommand(t, "--token", "tok", "--config", filepath.Join(configDir, "claude_desktop_config.json"))
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+
+	entries, err := os.ReadDir(configDir)
 	if err != nil {
-		t.Fatalf("read install dir: %v", err)
+		t.Fatalf("read dir: %v", err)
 	}
-	if len(entries) != 0 {
-		t.Errorf("--print wrote %d file(s) into the install directory", len(entries))
+	for _, dirEntry := range entries {
+		info, err := dirEntry.Info()
+		if err != nil {
+			t.Fatalf("stat %s: %v", dirEntry.Name(), err)
+		}
+		if info.Mode().Perm()&0o111 != 0 {
+			t.Errorf("register produced an executable file: %s", dirEntry.Name())
+		}
 	}
 }
 
@@ -203,12 +205,10 @@ func TestRunHelp(t *testing.T) {
 	}
 }
 
-func TestRunCommandOverrideKeepsNpxArguments(t *testing.T) {
-	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.0")
+func TestRunCommandOverrideRecordsThatExecutable(t *testing.T) {
+	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.1")
 
-	// --command names the executable; with --no-install the package arguments
-	// npx needs must still survive it.
-	code, stdout, stderr := runCommand(t, "--print", "--token", "tok", "--no-install", "--command", "/opt/homebrew/bin/npx")
+	code, stdout, stderr := runCommand(t, "--print", "--token", "tok", "--command", "/opt/homebrew/bin/npx")
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
@@ -217,8 +217,8 @@ func TestRunCommandOverrideKeepsNpxArguments(t *testing.T) {
 	if server.Command != "/opt/homebrew/bin/npx" {
 		t.Errorf("command = %q", server.Command)
 	}
-	if strings.Join(server.Args, " ") != "-y dooray-mcp-go@0.1.0" {
-		t.Errorf("args = %v, the package arguments must survive --command", server.Args)
+	if len(server.Args) != 0 {
+		t.Errorf("args = %v, nothing should be appended for a plain override", server.Args)
 	}
 }
 

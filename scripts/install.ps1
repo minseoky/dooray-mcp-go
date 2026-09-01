@@ -73,6 +73,57 @@ try {
         [Environment]::SetEnvironmentVariable('Path', "$userPath;$binDir", 'User')
         Write-Host "added $binDir to your user PATH; restart your terminal to pick it up."
     }
+
+    # The configuration is written here rather than by launching the binary. A
+    # process that has just written an executable and then runs it is what a
+    # dropper does, and endpoint protection scores it that way, so the freshly
+    # installed file is left alone until Claude Desktop starts it.
+    if (-not $env:DOORAY_TOKEN) {
+        Write-Host ""
+        Write-Host "Set DOORAY_TOKEN and re-run to configure Claude Desktop automatically."
+        Write-Host "Otherwise add this under mcpServers in claude_desktop_config.json:"
+        Write-Host ""
+        Write-Host "    dooray: command = $target, env.DOORAY_TOKEN = <your token>"
+        return
+    }
+
+    # Claude Desktop does not keep its configuration in the same directory on
+    # every machine: a packaged install has its Roaming writes redirected into
+    # a per-package LocalCache. Prefer a file that already exists.
+    $candidates = @(Join-Path $env:APPDATA "Claude\claude_desktop_config.json")
+    $packages = Join-Path $env:LOCALAPPDATA "Packages"
+    if (Test-Path $packages) {
+        $candidates += Get-ChildItem -Path $packages -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName "LocalCache\Roaming\Claude\claude_desktop_config.json" }
+    }
+    $candidates += Join-Path $env:LOCALAPPDATA "Claude\claude_desktop_config.json"
+
+    $configPath = $candidates | Where-Object { Test-Path -PathType Leaf $_ } | Select-Object -First 1
+    if (-not $configPath) {
+        $configPath = $candidates[0]
+        Write-Host "no existing Claude Desktop configuration was found, so this one was created."
+        Write-Host "locations searched:"
+        $candidates | ForEach-Object { Write-Host "  $_" }
+    }
+
+    $config = @{}
+    if (Test-Path -PathType Leaf $configPath) {
+        Copy-Item $configPath "$configPath.bak" -Force
+        $raw = Get-Content -Raw $configPath
+        if ($raw.Trim()) { $config = $raw | ConvertFrom-Json -AsHashtable }
+    } else {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $configPath) -Force | Out-Null
+    }
+
+    if (-not $config.ContainsKey("mcpServers")) { $config["mcpServers"] = @{} }
+    $config["mcpServers"]["dooray"] = @{
+        command = $target
+        env     = @{ DOORAY_TOKEN = $env:DOORAY_TOKEN }
+    }
+
+    $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configPath -Encoding utf8
+    Write-Host "registered MCP server 'dooray' in $configPath"
+    Write-Host "restart Claude Desktop to load the server."
 } finally {
     Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
 }

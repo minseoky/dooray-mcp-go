@@ -87,3 +87,16 @@ case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "warning: $BIN_DIR is not on PATH; add it to your shell profile." >&2 ;;
 esac
+
+# Registration is deliberately a separate step. A process that writes an
+# executable and then launches it looks like a dropper running its payload, so
+# this script never starts the binary it just installed.
+if [ -n "${DOORAY_TOKEN:-}" ]; then
+  echo ""
+  echo "To finish, register it with Claude Desktop by running:"
+  echo "  \"$BIN_DIR/dooray-mcp\" register --token \"\$DOORAY_TOKEN\""
+else
+  echo ""
+  echo "To finish, register it with Claude Desktop by running:"
+  echo "  \"$BIN_DIR/dooray-mcp\" register --token \"{personal-token}\""
+fi

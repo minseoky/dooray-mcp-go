@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "dooray-mcp-go",
   "display_name": "Dooray",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Read and write Dooray projects, tasks, calendars, and messages.",
   "long_description": "Exposes Dooray's account, calendar, project, post, attachment, and messenger APIs to Claude. Runs as a single static binary with no runtime dependency. Write-capable tools require an explicit confirmation on every call, and read-only mode hides them entirely.",
   "author": {
@@ -13,13 +13,22 @@
   "documentation": "https://github.com/minseoky/dooray-mcp-go#readme",
   "support": "https://github.com/minseoky/dooray-mcp-go/issues",
   "license": "MIT",
-  "keywords": ["dooray", "project", "task", "calendar", "messenger"],
+  "keywords": [
+    "dooray",
+    "project",
+    "task",
+    "calendar",
+    "messenger"
+  ],
   "server": {
     "type": "binary",
     "entry_point": "server/dooray-mcp",
     "mcp_config": {
       "command": "${__dirname}/server/dooray-mcp",
-      "args": ["--mode", "${user_config.mode}"],
+      "args": [
+        "--mode",
+        "${user_config.mode}"
+      ],
       "env": {
         "DOORAY_TOKEN": "${user_config.token}"
       },
@@ -48,6 +57,10 @@
   },
   "compatibility": {
     "claude_desktop": ">=0.10.0",
-    "platforms": ["darwin", "win32", "linux"]
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ]
   }
 }

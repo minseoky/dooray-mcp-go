@@ -54,13 +54,13 @@ To update, open the newer bundle; to remove it, use the extension list in Claude
 
 ### 2. npx
 
-The published `dooray-mcp-go` npm package contains the prebuilt binaries for every supported platform and a launcher that picks the right one. Nothing is compiled or downloaded at install time beyond the package itself. This route needs only Node.js 16 or newer.
+The published `dooray-mcp-go` npm package contains the prebuilt binaries for every supported platform and a launcher that picks the right one. This route needs only Node.js 16 or newer, and it runs the server directly:
 
 ```bash
-npx -y dooray-mcp-go register --token "{personal-token}"
+DOORAY_TOKEN="{personal-token}" npx -y dooray-mcp-go
 ```
 
-`register` copies the binary out of the npx cache into a stable per-user directory and points the config at that path. Do not leave `npx -y dooray-mcp-go` in an MCP config as the launch command — see [Why the config points at an installed path](#why-the-config-points-at-an-installed-path).
+It is not a way to install. `npx -y dooray-mcp-go register` is refused, because a cache path is not worth recording and copying the binary elsewhere would make it a self-replicating executable. Use route 1 or 3 to install, and do not put `npx` in an MCP config as the launch command — see [Why executables are written by the installer](#why-executables-are-written-by-the-installer).
 
 ### 3. Install script
 
@@ -80,16 +80,18 @@ Both scripts download `SHA256SUMS` from the same release, verify the archive aga
 
 Checksum verification protects against a corrupted or substituted download. It does not by itself prove the release is genuine, since the checksum file comes from the same release; the binaries are not signed with GPG or cosign.
 
-Install and register with Claude Desktop in one go:
+On Windows, set the token first and the script also writes the Claude Desktop configuration for you:
+
+```powershell
+$env:DOORAY_TOKEN = "{personal-token}"
+irm https://raw.githubusercontent.com/minseoky/dooray-mcp-go/main/scripts/install.ps1 | iex
+```
+
+On macOS and Linux the script installs the binary and prints the `register` command to run next:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/minseoky/dooray-mcp-go/main/scripts/install.sh | sh
 "$HOME/.local/bin/dooray-mcp" register --token "{personal-token}"
-```
-
-```powershell
-irm https://raw.githubusercontent.com/minseoky/dooray-mcp-go/main/scripts/install.ps1 | iex
-& "$env:LOCALAPPDATA\Programs\dooray-mcp\dooray-mcp.exe" register --token "{personal-token}"
 ```
 
 ### 4. Go toolchain
@@ -144,18 +146,12 @@ DOORAY_TOKEN="{personal-token}" dooray-mcp --mode read-only
 
 ## Claude Desktop
 
-Claude Desktop has no CLI, so it is configured by merging into `claude_desktop_config.json`. The binary can do that merge itself, which avoids hand-editing JSON and works the same on macOS and Windows.
+Claude Desktop has no CLI, so it is configured by merging into `claude_desktop_config.json`. The `.mcpb` bundle in route 1 does that for you; the steps below are for an already-installed binary.
 
 ### Register from the shell
 
 ```sh
 dooray-mcp register --token "{personal-token}"
-```
-
-Without installing anything first, through the npm wrapper:
-
-```sh
-npx -y dooray-mcp-go register --token "{personal-token}"
 ```
 
 Register a second, read-only server alongside it:
@@ -166,12 +162,11 @@ dooray-mcp register --name dooray-read-only --mode read-only --token "{personal-
 
 What the command does:
 
-- Copies the binary to a stable per-user directory — `%LOCALAPPDATA%\Programs\dooray-mcp` on Windows, `~/.local/bin` elsewhere — and records that absolute path, so the client never launches it from a package cache. An identical file already in place is left alone.
 - Searches the known Claude Desktop configuration locations and merges into the file that already exists, rather than assuming one path. On Windows that includes the packaged-install location under `LOCALAPPDATA\Packages\`, where a Store or MSIX install has its `Roaming` writes redirected.
 - Prints the file it wrote, so the location can be confirmed. If no configuration existed anywhere it searched, it says so and lists the locations, because that is also what happens when an install keeps its configuration somewhere else. Use `--config <path>` to point at that file directly.
 - Copies the current file to `claude_desktop_config.json.bak` before writing.
 - Merges only the `mcpServers.<name>` entry, leaving every other server and top-level setting untouched.
-- Records this binary's absolute path as `command`, or `npx -y dooray-mcp-go@<version>` when it was started through the npm wrapper.
+- Records the absolute path it is running from as `command`, and writes no executable of its own. Running it out of a package cache is refused instead.
 - Refuses to overwrite an existing server of the same name unless `--force` is passed.
 - Writes a new config as owner-only (`0600`), because the file holds the API token.
 
@@ -179,19 +174,9 @@ Restart Claude Desktop afterwards to load the server.
 
 ### If the server fails to start
 
-Claude Desktop launches MCP servers without your shell profile, so its `PATH` is the bare system one. A config whose `command` is `npx`, `node`, or `dooray-mcp` fails with a spawn error when those live in a Homebrew, nvm, or per-user directory that the login shell adds.
+Claude Desktop launches MCP servers without your shell profile, so its `PATH` is the bare system one. A config whose `command` is a bare name fails with a spawn error when it lives in a Homebrew, nvm, or per-user directory that the login shell adds. `register` records an absolute path for this reason.
 
-Registering from the shell without the npm wrapper sidesteps this, because it records the binary's absolute path:
-
-```sh
-dooray-mcp register --force --token "{personal-token}"
-```
-
-To keep an npx-based config, record the absolute path of `npx`. Run this through the wrapper so the package arguments are kept — `--command` replaces only the executable:
-
-```sh
-npx -y dooray-mcp-go register --force --command "$(command -v npx)" --token "{personal-token}"
-```
+`--command <path>` records a specific executable if the installed copy is somewhere else.
 
 Preview the JSON without touching the file:
 
@@ -203,17 +188,15 @@ dooray-mcp register --print --token "{personal-token}"
 
 If Claude Desktop does not pick the server up, check that the file `register` reported is the one Claude Desktop actually reads. Its Settings dialog exposes the configuration through "Edit Config", which reveals the path in use on that machine.
 
-### Why the config points at an installed path
+### Why executables are written by the installer
 
-`register` records an installed absolute path rather than `npx -y dooray-mcp-go`, and that is deliberate.
+Neither the server nor `register` ever writes an executable, and that constraint shapes the install routes.
 
-With npx as the launch command, every start does two things in one process: npx unpacks the executable into its cache, then spawns it. The process that wrote the executable is the process that runs it — the shape of a downloader dropping and launching a payload. Endpoint protection flags it on that pattern alone, with no bad code involved; one such product reports it as "the parent process and the dropper are the same".
+Endpoint protection watches for three things that together describe a dropper: a process creating a PE file, a process copying its own image, and a process launching an executable it just wrote. Ordinary software trips these as easily as malware does. An earlier version of `register` copied the binary out of the npx cache to give the config a stable path, and a Windows scanner reported all three at once — the copy was a PE file, it was the process's own image, and npx had unpacked and launched that same process.
 
-Installing once, from a separate command, keeps the two apart. The install step writes the binary and exits; later, Claude Desktop launches it. Nothing correlates a drop with an execution, because at launch time there is no drop.
+So writing executables is left to the processes that should be doing it: Claude Desktop when it installs a bundle, or the install script. `register` only ever records the path it is already running from, and refuses to run from a package cache rather than copy itself out of one. The install script does not launch what it just installed either — it prints the `register` command for you to run afterwards, as a separate process.
 
-The same reasoning applies to the install scripts, which are also a separate step from launching.
-
-`--no-install` restores the npx launch command for anyone who needs it, at the cost of that detection.
+None of this signs the binaries. A scanner that flags the file itself, rather than what a process did with it, is unaffected; that needs a code-signing certificate or a false-positive report.
 
 ### Register by hand
 
