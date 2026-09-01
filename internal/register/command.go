@@ -24,6 +24,8 @@ type options struct {
 	mode       string
 	command    string
 	configPath string
+	installDir string
+	noInstall  bool
 	force      bool
 	print      bool
 	help       bool
@@ -57,10 +59,13 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	entry, err := buildEntry(parsed, token)
+	entry, installedPath, err := buildEntry(parsed, token, parsed.print)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
+	}
+	if installedPath != "" {
+		fmt.Fprintf(stdout, "installed the binary to %s\n", installedPath)
 	}
 
 	if parsed.print {
@@ -96,23 +101,48 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func buildEntry(parsed options, token string) (ServerEntry, error) {
+// buildEntry decides what the MCP client should spawn. It returns the entry
+// and, when the binary was copied out of a package cache, the path it was
+// installed to.
+func buildEntry(parsed options, token string, dryRun bool) (ServerEntry, string, error) {
 	var command string
 	var args []string
+	var installedPath string
 
-	if spec := os.Getenv(npmLauncherEnv); spec != "" {
+	switch {
+	case parsed.noInstall && os.Getenv(npmLauncherEnv) != "":
+		// Opt-in legacy behavior: the client re-runs npx on every launch.
 		command = "npx"
-		args = append(args, "-y", spec)
-	} else {
-		executable, err := os.Executable()
+		args = append(args, "-y", os.Getenv(npmLauncherEnv))
+
+	default:
+		// Record a stable absolute path rather than a cache location. When this
+		// runs from an npx cache the binary is copied out first, so the process
+		// that unpacked it is not the one the client later launches.
+		//
+		// --print only previews the config, so it resolves the destination
+		// without writing an executable to disk.
+		install := InstallSelf
+		if dryRun {
+			install = InstallTarget
+		}
+		installed, err := install(parsed.installDir)
 		if err != nil {
-			return ServerEntry{}, fmt.Errorf("could not resolve this binary's path: %w", err)
+			return ServerEntry{}, "", err
 		}
-		resolved, err := filepath.EvalSymlinks(executable)
-		if err == nil {
-			executable = resolved
+		command = installed
+
+		if !dryRun {
+			executable, err := os.Executable()
+			if err == nil {
+				if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+					executable = resolved
+				}
+				if executable != installed {
+					installedPath = installed
+				}
+			}
 		}
-		command = executable
 	}
 
 	// --command replaces only the executable, so an absolute path to npx keeps
@@ -129,7 +159,7 @@ func buildEntry(parsed options, token string) (ServerEntry, error) {
 		Command: command,
 		Args:    args,
 		Env:     map[string]string{"DOORAY_TOKEN": token},
-	}, nil
+	}, installedPath, nil
 }
 
 func printableConfig(name string, entry ServerEntry) (string, error) {
@@ -164,6 +194,12 @@ func parseOptions(argv []string) (options, error) {
 			parsed.force = true
 		case arg == "--print":
 			parsed.print = true
+		case arg == "--no-install":
+			parsed.noInstall = true
+		case arg == "--install-dir":
+			parsed.installDir, err = takeValue(&index, "--install-dir")
+		case strings.HasPrefix(arg, "--install-dir="):
+			parsed.installDir = strings.TrimPrefix(arg, "--install-dir=")
 		case arg == "--client":
 			parsed.client, err = takeValue(&index, "--client")
 		case strings.HasPrefix(arg, "--client="):
@@ -215,6 +251,9 @@ Merges this server into the Claude Desktop configuration, keeping every other
 server and setting in the file. The previous file is backed up as
 claude_desktop_config.json.bak.
 
+The binary is first copied to a stable per-user directory and the config points
+at that path, so the client never launches it out of a package cache.
+
 Options:
   --token <token>     Dooray personal API token. Defaults to DOORAY_TOKEN.
   --name <name>       MCP server name in the config. Default: dooray
@@ -224,6 +263,13 @@ Options:
                       path, or to npx when run through the npm wrapper.
   --config <path>     Configuration file to merge into. Defaults to the
                       platform's Claude Desktop config path.
+  --install-dir <dir> Directory to install the binary into. Defaults to
+                      %LOCALAPPDATA%\Programs\dooray-mcp on Windows and
+                      ~/.local/bin elsewhere.
+  --no-install        Record "npx -y <package>" instead of an installed path.
+                      Only meaningful when run through the npm wrapper, and it
+                      makes the client unpack and launch the binary in one
+                      step, which endpoint protection may flag.
   --force             Replace an existing server with the same name.
   --print             Print the JSON block instead of writing the file.
   -h, --help          Print this message.

@@ -9,11 +9,43 @@ import (
 	"testing"
 )
 
+// runCommand always pins --install-dir to a temporary directory unless the
+// case supplies its own, so a test can never write into the real home.
 func runCommand(t *testing.T, argv ...string) (int, string, string) {
 	t.Helper()
+
+	pinned := true
+	for _, arg := range argv {
+		if arg == "--install-dir" || strings.HasPrefix(arg, "--install-dir=") {
+			pinned = false
+		}
+	}
+	if pinned {
+		argv = append([]string{"--install-dir", t.TempDir()}, argv...)
+	}
+
 	var stdout, stderr bytes.Buffer
 	code := Run(argv, &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
+}
+
+// configOf extracts the printed JSON block, ignoring any human-facing lines
+// that precede it.
+func configOf(t *testing.T, stdout string) map[string]ServerEntry {
+	t.Helper()
+
+	start := strings.Index(stdout, "{")
+	if start < 0 {
+		t.Fatalf("no JSON in stdout: %s", stdout)
+	}
+
+	var parsed struct {
+		MCPServers map[string]ServerEntry `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(stdout[start:]), &parsed); err != nil {
+		t.Fatalf("unmarshal stdout: %v\n%s", err, stdout)
+	}
+	return parsed.MCPServers
 }
 
 func TestRunPrintsConfigBlock(t *testing.T) {
@@ -25,14 +57,7 @@ func TestRunPrintsConfigBlock(t *testing.T) {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
 
-	var parsed struct {
-		MCPServers map[string]ServerEntry `json:"mcpServers"`
-	}
-	if err := json.Unmarshal([]byte(stdout), &parsed); err != nil {
-		t.Fatalf("unmarshal stdout: %v\n%s", err, stdout)
-	}
-
-	server := parsed.MCPServers["dooray"]
+	server := configOf(t, stdout)["dooray"]
 	if server.Command != "dooray-mcp" {
 		t.Errorf("command = %q", server.Command)
 	}
@@ -56,15 +81,58 @@ func TestRunPrintDoesNotWriteConfig(t *testing.T) {
 	}
 }
 
-func TestRunUsesNpxWhenLaunchedThroughNpm(t *testing.T) {
+func TestRunRecordsInstalledPathInsteadOfNpx(t *testing.T) {
 	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.0")
+	installDir := t.TempDir()
 
-	code, stdout, stderr := runCommand(t, "--print", "--token", "tok")
+	code, stdout, stderr := runCommand(t, "--print", "--token", "tok", "--install-dir", installDir)
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
-	if !strings.Contains(stdout, `"npx"`) || !strings.Contains(stdout, "dooray-mcp-go@0.1.0") {
-		t.Errorf("stdout = %s", stdout)
+
+	// Launching through npx would make the process that unpacks the binary the
+	// same one that runs it, so the config must point at a stable path.
+	server := configOf(t, stdout)["dooray"]
+	if server.Command == "npx" || strings.Contains(strings.Join(server.Args, " "), "dooray-mcp-go@") {
+		t.Errorf("config still launches through npx: %+v", server)
+	}
+	if filepath.Dir(server.Command) != installDir {
+		t.Errorf("command = %q, want it inside %q", server.Command, installDir)
+	}
+}
+
+func TestRunNoInstallKeepsNpxLaunch(t *testing.T) {
+	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.0")
+
+	code, stdout, stderr := runCommand(t, "--print", "--token", "tok", "--no-install")
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+
+	server := configOf(t, stdout)["dooray"]
+	if server.Command != "npx" {
+		t.Errorf("command = %q", server.Command)
+	}
+	if strings.Join(server.Args, " ") != "-y dooray-mcp-go@0.1.0" {
+		t.Errorf("args = %v", server.Args)
+	}
+}
+
+func TestPrintDoesNotInstallTheBinary(t *testing.T) {
+	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.0")
+	installDir := t.TempDir()
+
+	code, _, stderr := runCommand(t, "--print", "--token", "tok", "--install-dir", installDir)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+
+	entries, err := os.ReadDir(installDir)
+	if err != nil {
+		t.Fatalf("read install dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("--print wrote %d file(s) into the install directory", len(entries))
 	}
 }
 
@@ -138,19 +206,14 @@ func TestRunHelp(t *testing.T) {
 func TestRunCommandOverrideKeepsNpxArguments(t *testing.T) {
 	t.Setenv(npmLauncherEnv, "dooray-mcp-go@0.1.0")
 
-	code, stdout, stderr := runCommand(t, "--print", "--token", "tok", "--command", "/opt/homebrew/bin/npx")
+	// --command names the executable; with --no-install the package arguments
+	// npx needs must still survive it.
+	code, stdout, stderr := runCommand(t, "--print", "--token", "tok", "--no-install", "--command", "/opt/homebrew/bin/npx")
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
 
-	var parsed struct {
-		MCPServers map[string]ServerEntry `json:"mcpServers"`
-	}
-	if err := json.Unmarshal([]byte(stdout), &parsed); err != nil {
-		t.Fatalf("unmarshal stdout: %v", err)
-	}
-
-	server := parsed.MCPServers["dooray"]
+	server := configOf(t, stdout)["dooray"]
 	if server.Command != "/opt/homebrew/bin/npx" {
 		t.Errorf("command = %q", server.Command)
 	}
@@ -167,14 +230,7 @@ func TestRunCommandOverrideOutsideNpmWrapper(t *testing.T) {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
 
-	var parsed struct {
-		MCPServers map[string]ServerEntry `json:"mcpServers"`
-	}
-	if err := json.Unmarshal([]byte(stdout), &parsed); err != nil {
-		t.Fatalf("unmarshal stdout: %v", err)
-	}
-
-	server := parsed.MCPServers["dooray"]
+	server := configOf(t, stdout)["dooray"]
 	if server.Command != "/usr/local/bin/dooray-mcp" {
 		t.Errorf("command = %q", server.Command)
 	}
