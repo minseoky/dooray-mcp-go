@@ -5,7 +5,7 @@ This package ships the prebuilt `dooray-mcp` Go binaries and a launcher that sel
 Register it with Claude Desktop in one command:
 
 ```sh
-npx -y dooray-mcp-go register --token "{personal-token}" --force
+npx -y --package=dooray-mcp-go -- dooray-mcp-go register --token "{personal-token}" --force
 ```
 
 That writes the configuration with `npx` as the launch command:
@@ -15,7 +15,7 @@ That writes the configuration with `npx` as the launch command:
   "mcpServers": {
     "dooray": {
       "command": "npx",
-      "args": ["-y", "dooray-mcp-go@0.1.2"],
+      "args": ["-y", "--package=dooray-mcp-go@0.1.3", "--", "dooray-mcp-go"],
       "env": { "DOORAY_TOKEN": "{personal-token}" }
     }
   }

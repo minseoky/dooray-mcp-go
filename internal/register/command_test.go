@@ -82,8 +82,25 @@ func TestRunRecordsTheNpxInvocationFromAPackageCache(t *testing.T) {
 	if server.Command != "npx" {
 		t.Errorf("command = %q", server.Command)
 	}
-	if strings.Join(server.Args, " ") != "-y dooray-mcp-go@0.1.2" {
+	// Windows npx treats a bare name@version as the command to run, so the
+	// spec goes through --package and the bin is named after --.
+	if strings.Join(server.Args, " ") != "-y --package=dooray-mcp-go@0.1.2 -- dooray-mcp-go" {
 		t.Errorf("args = %v", server.Args)
+	}
+}
+
+func TestPackageNameOf(t *testing.T) {
+	cases := map[string]string{
+		"dooray-mcp-go@0.1.2": "dooray-mcp-go",
+		"dooray-mcp-go":       "dooray-mcp-go",
+		"@scope/pkg@1.2.3":    "@scope/pkg",
+		"@scope/pkg":          "@scope/pkg",
+		"pkg@^1.0.0":          "pkg",
+	}
+	for spec, want := range cases {
+		if got := packageNameOf(spec); got != want {
+			t.Errorf("packageNameOf(%q) = %q, want %q", spec, got, want)
+		}
 	}
 }
 
@@ -99,7 +116,7 @@ func TestRunFromAPackageCacheStillHonoursCommandOverride(t *testing.T) {
 	if server.Command != "/usr/local/bin/npx" {
 		t.Errorf("command = %q", server.Command)
 	}
-	if strings.Join(server.Args, " ") != "-y dooray-mcp-go@0.1.2" {
+	if strings.Join(server.Args, " ") != "-y --package=dooray-mcp-go@0.1.2 -- dooray-mcp-go" {
 		t.Errorf("args = %v, the package arguments must survive --command", server.Args)
 	}
 }

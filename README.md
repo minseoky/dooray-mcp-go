@@ -57,10 +57,12 @@ To update, open the newer bundle; to remove it, use the extension list in Claude
 The published `dooray-mcp-go` npm package contains the prebuilt binaries for every supported platform and a launcher that picks the right one. This route needs only Node.js 16 or newer.
 
 ```bash
-npx -y dooray-mcp-go@0.1.2 register --token "{personal-token}" --force
+npx -y --package=dooray-mcp-go@0.1.3 -- dooray-mcp-go register --token "{personal-token}" --force
 ```
 
-That writes the Claude Desktop configuration with `npx` as the launch command, so every start fetches the pinned version from the cache. Restart Claude Desktop afterwards.
+That writes the Claude Desktop configuration with `npx` as the launch command, so every start runs the pinned version from the cache. Restart Claude Desktop afterwards.
+
+The spec goes through `--package`, with the executable named after `--`. Windows npx reads a bare `dooray-mcp-go@0.1.3` as the command to run and fails with "is not recognized as an internal or external command"; this form works on both platforms, and `register` writes it into the configuration for the same reason.
 
 See [What is and is not written as an executable](#what-is-and-is-not-written-as-an-executable) for the endpoint-protection tradeoff this carries.
 
@@ -153,7 +155,7 @@ Claude Desktop has no CLI, so it is configured by merging into `claude_desktop_c
 ### Register from the shell
 
 ```sh
-npx -y dooray-mcp-go@0.1.2 register --token "{personal-token}" --force
+npx -y --package=dooray-mcp-go@0.1.3 -- dooray-mcp-go register --token "{personal-token}" --force
 ```
 
 From an installed binary, the same command without npx:
@@ -174,7 +176,7 @@ What the command does:
 - Prints the file it wrote, so the location can be confirmed. If no configuration existed anywhere it searched, it says so and lists the locations, because that is also what happens when an install keeps its configuration somewhere else. Use `--config <path>` to point at that file directly.
 - Copies the current file to `claude_desktop_config.json.bak` before writing.
 - Merges only the `mcpServers.<name>` entry, leaving every other server and top-level setting untouched.
-- Records `npx -y dooray-mcp-go@<version>` as `command` when it runs through the npm wrapper, and otherwise the absolute path it is running from. It writes no executable either way.
+- Records `npx -y --package=dooray-mcp-go@<version> -- dooray-mcp-go` as the launch command when it runs through the npm wrapper, and otherwise the absolute path it is running from. It writes no executable either way.
 - Refuses to overwrite an existing server of the same name unless `--force` is passed.
 - Writes a new config as owner-only (`0600`), because the file holds the API token.
 

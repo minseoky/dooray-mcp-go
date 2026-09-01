@@ -112,6 +112,19 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// packageNameOf strips the version from an npm spec, leaving the bin name that
+// npx should run. A scoped name keeps its leading @.
+func packageNameOf(spec string) string {
+	trimmed := strings.TrimPrefix(spec, "@")
+	if index := strings.Index(trimmed, "@"); index >= 0 {
+		trimmed = trimmed[:index]
+	}
+	if strings.HasPrefix(spec, "@") {
+		return "@" + trimmed
+	}
+	return trimmed
+}
+
 // buildEntry decides what the MCP client should spawn.
 func buildEntry(parsed options, token string) (ServerEntry, error) {
 	var command string
@@ -127,8 +140,13 @@ func buildEntry(parsed options, token string) (ServerEntry, error) {
 		// alternative of copying the binary somewhere stable, because an
 		// executable writing a copy of its own image is self-replication, which
 		// scores far worse and is never done by this binary.
+		//
+		// The package spec is passed through --package rather than as the
+		// command word. Windows npx resolves a bare "name@version" as the
+		// command to run and fails with "not recognized as an internal or
+		// external command", so the executable is named separately after --.
 		command = "npx"
-		args = append(args, "-y", spec)
+		args = append(args, "-y", "--package="+spec, "--", packageNameOf(spec))
 	} else {
 		executable, err := os.Executable()
 		if err != nil {
